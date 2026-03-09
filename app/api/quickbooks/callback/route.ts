@@ -7,8 +7,10 @@ const SETTINGS_FILE = path.join(process.cwd(), 'data', 'qb-settings.json');
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession();
+  const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+  
   if (!session) {
-    return NextResponse.redirect(new URL('/login', req.url));
+    return NextResponse.redirect(new URL('/login', baseUrl));
   }
 
   const { searchParams } = new URL(req.url);
@@ -19,11 +21,11 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error('[QB OAuth] Error from QuickBooks:', error);
-    return NextResponse.redirect(new URL('/dashboard?qb_error=' + encodeURIComponent(error), req.url));
+    return NextResponse.redirect(new URL('/dashboard?qb_error=' + encodeURIComponent(error), baseUrl));
   }
 
   if (!code || !realmId) {
-    return NextResponse.redirect(new URL('/dashboard?qb_error=missing_code', req.url));
+    return NextResponse.redirect(new URL('/dashboard?qb_error=missing_code', baseUrl));
   }
 
   // Load saved credentials
@@ -37,11 +39,11 @@ export async function GET(req: NextRequest) {
     }
   } catch (e) {
     console.error('[QB OAuth] Failed to load settings:', e);
-    return NextResponse.redirect(new URL('/dashboard?qb_error=settings_load_failed', req.url));
+    return NextResponse.redirect(new URL('/dashboard?qb_error=settings_load_failed', baseUrl));
   }
 
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(new URL('/dashboard?qb_error=no_credentials', req.url));
+    return NextResponse.redirect(new URL('/dashboard?qb_error=no_credentials', baseUrl));
   }
 
   // Exchange code for tokens
@@ -68,7 +70,7 @@ export async function GET(req: NextRequest) {
     if (!tokenRes.ok) {
       const text = await tokenRes.text();
       console.error('[QB OAuth] Token exchange failed:', tokenRes.status, text);
-      return NextResponse.redirect(new URL('/dashboard?qb_error=token_exchange_failed', req.url));
+      return NextResponse.redirect(new URL('/dashboard?qb_error=token_exchange_failed', baseUrl));
     }
 
     const tokens = await tokenRes.json();
@@ -77,7 +79,7 @@ export async function GET(req: NextRequest) {
 
     if (!refreshToken) {
       console.error('[QB OAuth] No refresh_token in response');
-      return NextResponse.redirect(new URL('/dashboard?qb_error=no_refresh_token', req.url));
+      return NextResponse.redirect(new URL('/dashboard?qb_error=no_refresh_token', baseUrl));
     }
 
     // Save tokens to settings file (local dev only - Railway is ephemeral)
@@ -102,10 +104,11 @@ export async function GET(req: NextRequest) {
       realmId: realmId,
       refreshToken: refreshToken,
     });
-    return NextResponse.redirect(new URL(`/qb-success?${params.toString()}`, req.url));
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    return NextResponse.redirect(new URL(`/qb-success?${params.toString()}`, baseUrl));
     
   } catch (e) {
     console.error('[QB OAuth] Exception during token exchange:', e);
-    return NextResponse.redirect(new URL('/dashboard?qb_error=exception', req.url));
+    return NextResponse.redirect(new URL('/dashboard?qb_error=exception', baseUrl));
   }
 }
