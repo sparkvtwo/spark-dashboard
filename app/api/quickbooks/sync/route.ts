@@ -213,7 +213,9 @@ export async function GET() {
       const s = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
       if (!clientId) clientId = s.clientId || '';
       if (!clientSecret) clientSecret = s.clientSecret || '';
-      if (!realmId) realmId = s.tenantId || '';
+      if (!realmId) realmId = s.realmId || s.tenantId || '';
+      if (!refreshToken) refreshToken = s.refreshToken || '';
+      if (!accessToken) accessToken = s.accessToken || '';
     }
   } catch { /* ignore */ }
 
