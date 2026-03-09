@@ -56,12 +56,12 @@ function categorizeVendor(vendorName: string): { name: string; category: string 
   return { name: vendorName, category: 'Other' };
 }
 
-interface QBPurchase {
+interface QBVendor {
   Id: string;
-  TxnDate: string;
-  TotalAmt: number;
-  EntityRef?: { name?: string };
-  Line?: Array<{ Amount?: number; Description?: string }>;
+  DisplayName?: string;
+  CompanyName?: string;
+  GivenName?: string;
+  FamilyName?: string;
 }
 
 interface LicenseEntry {
@@ -82,32 +82,18 @@ interface LicenseEntry {
   reviewFlag?: string;
 }
 
-function purchasesToLicenses(purchases: QBPurchase[]): LicenseEntry[] {
-  // Group by vendor
-  const groups: Record<string, { total: number; count: number; vendorRaw: string }> = {};
-
-  for (const p of purchases) {
-    const vendorRaw = p.EntityRef?.name || 'Unknown';
-    const key = categorizeVendor(vendorRaw).name;
-    if (!groups[key]) groups[key] = { total: 0, count: 0, vendorRaw };
-    groups[key].total += p.TotalAmt || 0;
-    groups[key].count += 1;
-  }
-
+function vendorsToLicenses(vendors: QBVendor[]): LicenseEntry[] {
   const now = new Date();
   const renewalDate = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().split('T')[0];
   const addedDate = now.toISOString().split('T')[0];
   const owner = 'chris@vtwo.co';
 
-  return Object.entries(groups).map(([key, g]) => {
-    const { name, category } = categorizeVendor(g.vendorRaw);
-    const totalMonthly = g.total / 12;
-    const annualCost = g.total;
+  return vendors.map((vendor) => {
+    const vendorRaw = vendor.DisplayName || vendor.CompanyName || `${vendor.GivenName || ''} ${vendor.FamilyName || ''}`.trim() || 'Unknown';
+    const { name, category } = categorizeVendor(vendorRaw);
     const id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 
     let reviewFlag: string | undefined;
-    if (annualCost > 10000) reviewFlag = `High spend $${Math.round(annualCost / 1000)}k/yr — confirm seats and plan`;
-    if (category === 'Finance' && name.toLowerCase().includes('payment')) reviewFlag = 'Payment processing fees — not a software license, verify';
     if (name === '650 Industries') reviewFlag = 'Unknown vendor — needs identification';
 
     return {
@@ -117,12 +103,12 @@ function purchasesToLicenses(purchases: QBPurchase[]): LicenseEntry[] {
       category,
       seats: 1,
       costPerSeat: 0,
-      totalMonthlyCost: Math.round(totalMonthly * 100) / 100,
+      totalMonthlyCost: 0,
       billingCycle: 'monthly',
-      annualCost: Math.round(annualCost * 100) / 100,
+      annualCost: 0,
       renewalDate,
       owner,
-      notes: `Imported from QuickBooks (${g.count} transactions).`,
+      notes: `Imported from QuickBooks (Vendor).`,
       status: 'active',
       addedDate,
       ...(reviewFlag ? { reviewFlag } : {}),
@@ -240,14 +226,14 @@ export async function GET() {
   }
 
   try {
-    const start = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const sql = `SELECT * FROM Purchase WHERE TxnDate >= '${start}' MAXRESULTS 1000`;
+    // Try Vendor query first (more broadly accessible than Purchase)
+    const sql = `SELECT * FROM Vendor MAXRESULTS 1000`;
 
     const { data } = await qbQuery(sql, accessToken, realmId, doRefresh);
-    const purchases: QBPurchase[] = (data as any)?.QueryResponse?.Purchase || [];
-    console.log(`[QB] Fetched ${purchases.length} purchase transactions`);
+    const vendors: QBVendor[] = (data as any)?.QueryResponse?.Vendor || [];
+    console.log(`[QB] Fetched ${vendors.length} vendors`);
 
-    const licenses = purchasesToLicenses(purchases);
+    const licenses = vendorsToLicenses(vendors);
     const totalAnnual = licenses.reduce((s, l) => s + l.annualCost, 0);
     const totalMonthly = licenses.reduce((s, l) => s + l.totalMonthlyCost, 0);
     const lastSynced = new Date().toISOString();
