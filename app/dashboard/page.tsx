@@ -97,9 +97,14 @@ export default function DashboardPage() {
   const loadQBStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/quickbooks/settings');
-      setQBStatus(await res.json());
+      const data = await res.json();
+      setQBStatus(data);
+      // Redirect to setup wizard if QB is not connected
+      if (data.needsAuth || data.missingAppCredentials === false && !data.configured) {
+        router.replace('/setup');
+      }
     } catch { /* ignore */ }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (status === 'authenticated') {

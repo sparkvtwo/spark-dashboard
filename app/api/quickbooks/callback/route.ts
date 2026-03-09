@@ -16,11 +16,11 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error('[QB OAuth] Error from QuickBooks:', error);
-    return NextResponse.redirect(new URL('/dashboard?qb_error=' + encodeURIComponent(error), baseUrl));
+    return NextResponse.redirect(new URL('/setup?qb_error=' + encodeURIComponent(error), baseUrl));
   }
 
   if (!code || !realmId) {
-    return NextResponse.redirect(new URL('/dashboard?qb_error=missing_code', baseUrl));
+    return NextResponse.redirect(new URL('/setup?qb_error=missing_code', baseUrl));
   }
 
   const clientId     = process.env.QB_CLIENT_ID     || '';
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   if (!clientId || !clientSecret) {
     console.error('[QB OAuth] QB_CLIENT_ID or QB_CLIENT_SECRET not set');
-    return NextResponse.redirect(new URL('/dashboard?qb_error=missing_app_credentials', baseUrl));
+    return NextResponse.redirect(new URL('/setup?qb_error=missing_app_credentials', baseUrl));
   }
 
   try {
@@ -52,14 +52,14 @@ export async function GET(req: NextRequest) {
     if (!tokenRes.ok) {
       const text = await tokenRes.text();
       console.error('[QB OAuth] Token exchange failed:', tokenRes.status, text);
-      return NextResponse.redirect(new URL('/dashboard?qb_error=token_exchange_failed', baseUrl));
+      return NextResponse.redirect(new URL('/setup?qb_error=token_exchange_failed', baseUrl));
     }
 
     const tokens = await tokenRes.json() as { refresh_token?: string; access_token: string };
 
     if (!tokens.refresh_token) {
       console.error('[QB OAuth] No refresh_token in response');
-      return NextResponse.redirect(new URL('/dashboard?qb_error=no_refresh_token', baseUrl));
+      return NextResponse.redirect(new URL('/setup?qb_error=no_refresh_token', baseUrl));
     }
 
     await saveTokens({
@@ -73,6 +73,6 @@ export async function GET(req: NextRequest) {
 
   } catch (e) {
     console.error('[QB OAuth] Exception:', e);
-    return NextResponse.redirect(new URL('/dashboard?qb_error=exception', baseUrl));
+    return NextResponse.redirect(new URL('/setup?qb_error=exception', baseUrl));
   }
 }
