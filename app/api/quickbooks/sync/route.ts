@@ -181,7 +181,6 @@ export async function GET() {
   const doRefresh = async (): Promise<string> => {
     const result = await qbRefresh(creds);
     accessToken = result.accessToken;
-    // Update creds.refreshToken in-place for any subsequent retries
     creds.refreshToken = result.refreshToken;
     return accessToken;
   };
@@ -191,7 +190,12 @@ export async function GET() {
     try {
       accessToken = await doRefresh();
     } catch (e) {
+      const msg = String(e);
       console.error('[QB Sync] Token refresh failed:', e);
+      // invalid_client or invalid_grant = stale/wrong credentials → needs re-auth
+      if (msg.includes('invalid_client') || msg.includes('invalid_grant')) {
+        return NextResponse.json({ needsReauth: true, warning: 'QuickBooks authorization expired. Please reconnect.', licenses: [], lastSynced: null, totalAnnual: 0, totalMonthly: 0 }, { status: 401 });
+      }
       return serveCachedOrSeed(`Token refresh failed: ${e}`);
     }
   }
@@ -200,7 +204,7 @@ export async function GET() {
     const sql = `SELECT * FROM Vendor MAXRESULTS 1000`;
     const { data } = await qbQuery(sql, accessToken, creds.realmId, doRefresh);
     const vendors: QBVendor[] = (data as any)?.QueryResponse?.Vendor || [];
-    console.log(`[QB] Fetched ${vendors.length} vendors`);
+    console.log(`[QB Sync] Fetched ${vendors.length} vendors`);
 
     const licenses = vendorsToLicenses(vendors);
     const totalAnnual = licenses.reduce((s, l) => s + l.annualCost, 0);

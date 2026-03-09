@@ -23,11 +23,12 @@ export default function SetupPage() {
       window.history.replaceState({}, '', '/setup');
     }
 
-    // If QB is already connected, skip straight to dashboard
     fetch('/api/quickbooks/settings')
       .then(r => r.json())
       .then(data => {
-        if (data.configured) {
+        // Only skip setup if QB is configured AND came here without an error
+        const params = new URLSearchParams(window.location.search);
+        if (data.configured && !params.get('qb_error')) {
           router.replace('/dashboard');
           return;
         }

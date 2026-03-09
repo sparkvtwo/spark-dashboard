@@ -81,7 +81,12 @@ export default function DashboardPage() {
     if (force) setSyncing(true); else setLoading(true);
     try {
       const res = await fetch(url);
-      const d: SyncData = await res.json();
+      const d: SyncData & { needsReauth?: boolean } = await res.json();
+      // Stale/invalid credentials — send back to setup wizard
+      if (d.needsReauth) {
+        router.replace('/setup');
+        return;
+      }
       setLicenses(d.licenses || []);
       setLastSynced(d.lastSynced || null);
       setWarning(d.warning || null);
@@ -92,7 +97,7 @@ export default function DashboardPage() {
       setSyncing(false);
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   const loadQBStatus = useCallback(async () => {
     try {
