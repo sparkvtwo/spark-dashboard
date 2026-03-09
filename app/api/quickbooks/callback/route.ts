@@ -98,13 +98,12 @@ export async function GET(req: NextRequest) {
 
     console.log('[QB OAuth] Successfully connected. Realm:', realmId);
     console.log('[QB OAuth] REFRESH_TOKEN (add to Railway env):', refreshToken);
-    
+
     // Redirect to a success page that displays the token
     const params = new URLSearchParams({
       realmId: realmId,
       refreshToken: refreshToken,
     });
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
     return NextResponse.redirect(new URL(`/qb-success?${params.toString()}`, baseUrl));
     
   } catch (e) {
