@@ -1,9 +1,9 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 
-export default function QBSuccessPage() {
+function QBSuccessContent() {
   const searchParams = useSearchParams();
   const [copied, setCopied] = useState(false);
   
@@ -143,5 +143,25 @@ export default function QBSuccessPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function QBSuccessPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ 
+        minHeight: '100vh', 
+        background: '#0d0d14', 
+        color: '#e8e8f0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: 'Inter, sans-serif'
+      }}>
+        <div>Loading...</div>
+      </div>
+    }>
+      <QBSuccessContent />
+    </Suspense>
   );
 }
