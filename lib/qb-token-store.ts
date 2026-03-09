@@ -291,6 +291,36 @@ export async function saveAllTokens(params: {
   } catch { /* ignore */ }
 }
 
+// ─── Save credentials (clientId, clientSecret, realmId) to Railway vars ──────
+// Called when user submits the QB Settings form, before the OAuth redirect.
+// Ensures credentials survive Railway redeploys so the callback can always
+// exchange the auth code — even if the local settings file has been wiped.
+
+export async function saveAllCredentials(params: {
+  clientId: string;
+  clientSecret: string;
+  realmId: string;
+}): Promise<void> {
+  // Update in-process cache
+  if (!_cached) _cached = {};
+  _cached.clientId = params.clientId;
+  _cached.clientSecret = params.clientSecret;
+  _cached.realmId = params.realmId;
+
+  // Persist to Railway env vars
+  const results = await Promise.all([
+    tryUpdateRailwayVariable('QB_CLIENT_ID', params.clientId),
+    tryUpdateRailwayVariable('QB_CLIENT_SECRET', params.clientSecret),
+    tryUpdateRailwayVariable('QB_REALM_ID', params.realmId),
+  ]);
+
+  if (results.some(Boolean)) {
+    console.log('[QB TokenStore] Credentials persisted to Railway variables ✓');
+  } else {
+    console.warn('[QB TokenStore] Could not persist credentials to Railway — local file only');
+  }
+}
+
 // ─── Clear in-process cache (useful in tests) ─────────────────────────────────
 
 export function clearCache(): void {

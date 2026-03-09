@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { saveAllCredentials } from '@/lib/qb-token-store';
 
 const CACHE_FILE = path.join(process.cwd(), 'data', 'licenses-cache.json');
 const SETTINGS_FILE = path.join(process.cwd(), 'data', 'qb-settings.json');
@@ -46,9 +47,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'clientId, clientSecret, and tenantId are required' }, { status: 400 });
   }
 
-  // Save settings (not in git)
+  // Save settings locally AND persist to Railway env vars so they survive redeploys
   fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ clientId, clientSecret, tenantId, updatedAt: new Date().toISOString() }, null, 2));
+  await saveAllCredentials({ clientId, clientSecret, realmId: tenantId });
 
   // Build OAuth authorization URL
   const redirectUri = process.env.QB_REDIRECT_URI || `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/quickbooks/callback`;
