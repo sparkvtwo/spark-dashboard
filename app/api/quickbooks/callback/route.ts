@@ -97,13 +97,12 @@ export async function GET(req: NextRequest) {
     console.log('[QB OAuth] Successfully connected. Realm:', realmId);
     console.log('[QB OAuth] REFRESH_TOKEN (add to Railway env):', refreshToken);
     
-    // Redirect back to dashboard with tokens in URL for easy copy/paste
+    // Redirect to a success page that displays the token
     const params = new URLSearchParams({
-      qb_connected: 'true',
       realmId: realmId,
       refreshToken: refreshToken,
     });
-    return NextResponse.redirect(new URL(`/dashboard?${params.toString()}`, req.url));
+    return NextResponse.redirect(new URL(`/qb-success?${params.toString()}`, req.url));
     
   } catch (e) {
     console.error('[QB OAuth] Exception during token exchange:', e);
