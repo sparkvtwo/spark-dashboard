@@ -62,5 +62,10 @@ export async function POST(req: NextRequest) {
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&state=${encodeURIComponent(state)}`;
 
-  return NextResponse.json({ success: true, authUrl });
+  // Debug logging
+  console.log('[QB Settings] NEXTAUTH_URL:', process.env.NEXTAUTH_URL);
+  console.log('[QB Settings] QB_REDIRECT_URI:', process.env.QB_REDIRECT_URI);
+  console.log('[QB Settings] Generated redirectUri:', redirectUri);
+
+  return NextResponse.json({ success: true, authUrl, debug: { redirectUri, nextauthUrl: process.env.NEXTAUTH_URL } });
 }
