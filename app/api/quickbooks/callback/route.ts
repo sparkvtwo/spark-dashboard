@@ -1,22 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as fs from 'fs';
-import * as path from 'path';
-import { saveAllTokens } from '@/lib/qb-token-store';
+import { saveTokens } from '@/lib/qb-token-store';
 
-const SETTINGS_FILE = path.join(process.cwd(), 'data', 'qb-settings.json');
-
+/**
+ * QuickBooks OAuth callback.
+ * Exchanges the one-time auth code for tokens and persists them.
+ * No session check — the callback is secured by the one-time code + state param.
+ */
 export async function GET(req: NextRequest) {
   const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-
-  // Note: we intentionally do not require a session here.
-  // The callback is secured by the one-time OAuth code + state param from QB.
-  // Requiring a session causes the OAuth code to be silently dropped if the
-  // session cookie is missing (e.g. after a redeploy mid-flow).
-
   const { searchParams } = new URL(req.url);
-  const code = searchParams.get('code');
+
+  const code    = searchParams.get('code');
   const realmId = searchParams.get('realmId');
-  const error = searchParams.get('error');
+  const error   = searchParams.get('error');
 
   if (error) {
     console.error('[QB OAuth] Error from QuickBooks:', error);
@@ -27,47 +23,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard?qb_error=missing_code', baseUrl));
   }
 
-  // Load saved credentials
-  let clientId = '';
-  let clientSecret = '';
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      const s = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-      clientId = s.clientId || '';
-      clientSecret = s.clientSecret || '';
-    }
-  } catch (e) {
-    console.error('[QB OAuth] Failed to load settings:', e);
-    return NextResponse.redirect(new URL('/dashboard?qb_error=settings_load_failed', baseUrl));
-  }
-
-  // Fall back to env vars
-  if (!clientId) clientId = process.env.QB_CLIENT_ID || '';
-  if (!clientSecret) clientSecret = process.env.QB_CLIENT_SECRET || '';
+  const clientId     = process.env.QB_CLIENT_ID     || '';
+  const clientSecret = process.env.QB_CLIENT_SECRET  || '';
+  const redirectUri  = process.env.QB_REDIRECT_URI  || `${baseUrl}/api/quickbooks/callback`;
 
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(new URL('/dashboard?qb_error=no_credentials', baseUrl));
+    console.error('[QB OAuth] QB_CLIENT_ID or QB_CLIENT_SECRET not set');
+    return NextResponse.redirect(new URL('/dashboard?qb_error=missing_app_credentials', baseUrl));
   }
 
-  // Exchange code for tokens
-  const redirectUri = process.env.QB_REDIRECT_URI || `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/quickbooks/callback`;
-
   try {
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: redirectUri,
-    });
+    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
     const tokenRes = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${credentials}`,
+        'Authorization': `Basic ${basicAuth}`,
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
       },
-      body: body.toString(),
+      body: new URLSearchParams({
+        grant_type:   'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+      }).toString(),
     });
 
     if (!tokenRes.ok) {
@@ -76,25 +55,24 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard?qb_error=token_exchange_failed', baseUrl));
     }
 
-    const tokens = await tokenRes.json();
-    const refreshToken = tokens.refresh_token;
-    const accessToken = tokens.access_token;
+    const tokens = await tokenRes.json() as { refresh_token?: string; access_token: string };
 
-    if (!refreshToken) {
+    if (!tokens.refresh_token) {
       console.error('[QB OAuth] No refresh_token in response');
       return NextResponse.redirect(new URL('/dashboard?qb_error=no_refresh_token', baseUrl));
     }
 
-    // Persist tokens via centralised token store (writes to Railway vars + local file)
-    await saveAllTokens({ clientId, clientSecret, realmId, refreshToken, accessToken });
+    await saveTokens({
+      realmId,
+      refreshToken: tokens.refresh_token,
+      accessToken:  tokens.access_token,
+    });
 
-    console.log('[QB OAuth] Successfully connected. Realm:', realmId);
-
-    // Redirect to dashboard with success flag — tokens are already persisted automatically
+    console.log('[QB OAuth] Connected. Realm:', realmId);
     return NextResponse.redirect(new URL('/dashboard?qb_success=true', baseUrl));
 
   } catch (e) {
-    console.error('[QB OAuth] Exception during token exchange:', e);
+    console.error('[QB OAuth] Exception:', e);
     return NextResponse.redirect(new URL('/dashboard?qb_error=exception', baseUrl));
   }
 }

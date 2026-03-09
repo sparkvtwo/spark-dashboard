@@ -1,18 +1,16 @@
+import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { NextRequest, NextResponse } from 'next/server';
+import { getCredentialStatus } from '@/lib/qb-token-store';
 import fs from 'fs';
 import path from 'path';
-import { saveAllCredentials } from '@/lib/qb-token-store';
 
 const CACHE_FILE = path.join(process.cwd(), 'data', 'licenses-cache.json');
-const SETTINGS_FILE = path.join(process.cwd(), 'data', 'qb-settings.json');
 
 export async function GET() {
   const session = await getServerSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const realmId = process.env.QB_REALM_ID || '';
-  const hasTokens = !!(process.env.QB_CLIENT_ID && process.env.QB_CLIENT_SECRET && process.env.QB_REFRESH_TOKEN);
+  const status = getCredentialStatus();
 
   let lastSynced: string | null = null;
   try {
@@ -22,47 +20,10 @@ export async function GET() {
     }
   } catch { /* ignore */ }
 
-  let settingsFile: Record<string, string> = {};
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      settingsFile = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-    }
-  } catch { /* ignore */ }
-
   return NextResponse.json({
-    realmId: realmId || settingsFile.tenantId || null,
+    configured: status.clientId && status.clientSecret && status.realmId && status.refreshToken,
+    missingAppCredentials: !status.clientId || !status.clientSecret,
+    needsAuth: status.clientId && status.clientSecret && (!status.realmId || !status.refreshToken),
     lastSynced,
-    configured: hasTokens || !!(settingsFile.clientId && settingsFile.clientSecret),
   });
-}
-
-export async function POST(req: NextRequest) {
-  const session = await getServerSession();
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const body = await req.json();
-  const { clientId, clientSecret, tenantId } = body as { clientId: string; clientSecret: string; tenantId: string };
-
-  if (!clientId || !clientSecret || !tenantId) {
-    return NextResponse.json({ error: 'clientId, clientSecret, and tenantId are required' }, { status: 400 });
-  }
-
-  // Save settings locally AND persist to Railway env vars so they survive redeploys
-  fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ clientId, clientSecret, tenantId, updatedAt: new Date().toISOString() }, null, 2));
-  await saveAllCredentials({ clientId, clientSecret, realmId: tenantId });
-
-  // Build OAuth authorization URL
-  const redirectUri = process.env.QB_REDIRECT_URI || `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/quickbooks/callback`;
-  const scope = 'com.intuit.quickbooks.accounting';
-  const state = Buffer.from(JSON.stringify({ ts: Date.now() })).toString('base64');
-
-  const authUrl = `https://appcenter.intuit.com/connect/oauth2?` +
-    `client_id=${encodeURIComponent(clientId)}` +
-    `&response_type=code` +
-    `&scope=${encodeURIComponent(scope)}` +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&state=${encodeURIComponent(state)}`;
-
-  return NextResponse.json({ success: true, authUrl });
 }

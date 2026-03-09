@@ -26,9 +26,10 @@ interface SyncData {
 }
 
 interface QBStatus {
-  realmId: string | null;
-  lastSynced: string | null;
   configured: boolean;
+  needsAuth: boolean;
+  missingAppCredentials: boolean;
+  lastSynced: string | null;
 }
 
 const categoryColors: Record<string, string> = {
@@ -53,24 +54,20 @@ export default function DashboardPage() {
   const [warning, setWarning] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [qbBanner, setQbBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  const [showSettings, setShowSettings] = useState(false);
   const [qbStatus, setQBStatus] = useState<QBStatus | null>(null);
-  const [settingsForm, setSettingsForm] = useState({ clientId: '', clientSecret: '', tenantId: '' });
-  const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
+  const [showQBStatus, setShowQBStatus] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
 
-  // Handle QB OAuth callback result via query params (read from window to avoid Suspense requirement)
+  // Handle QB OAuth callback result via query params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const success = params.get('qb_success');
     const error = params.get('qb_error');
     if (success) {
-      setQbBanner({ type: 'success', message: '✓ QuickBooks connected successfully. Tokens saved automatically.' });
+      setQbBanner({ type: 'success', message: '✓ QuickBooks connected successfully.' });
       window.history.replaceState({}, '', '/dashboard');
       setTimeout(() => setQbBanner(null), 6000);
     } else if (error) {
@@ -89,7 +86,7 @@ export default function DashboardPage() {
       setLastSynced(d.lastSynced || null);
       setWarning(d.warning || null);
       setFromCache(d.fromCache || false);
-    } catch (e) {
+    } catch {
       setWarning('Failed to fetch data.');
     } finally {
       setSyncing(false);
@@ -111,30 +108,6 @@ export default function DashboardPage() {
     }
   }, [status, fetchData, loadQBStatus]);
 
-  const handleSaveSettings = async () => {
-    setSettingsSaving(true);
-    setSettingsMsg(null);
-    try {
-      const res = await fetch('/api/quickbooks/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settingsForm),
-      });
-      const data = await res.json();
-      if (data.authUrl) {
-        setSettingsMsg('Settings saved! Redirecting to QuickBooks…');
-        setTimeout(() => { window.location.href = data.authUrl; }, 1000);
-      } else {
-        setSettingsMsg(data.error || 'Saved.');
-      }
-      await loadQBStatus();
-    } catch (e) {
-      setSettingsMsg('Failed to save settings.');
-    } finally {
-      setSettingsSaving(false);
-    }
-  };
-
   if (status === 'loading' || loading) {
     return (
       <div style={{ minHeight: '100vh', background: '#0d0d14', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666688', fontFamily: 'Inter, sans-serif' }}>
@@ -144,28 +117,28 @@ export default function DashboardPage() {
     );
   }
 
-  const totalAnnual = licenses.reduce((s, l) => s + l.annualCost, 0);
+  const totalAnnual  = licenses.reduce((s, l) => s + l.annualCost, 0);
   const totalMonthly = licenses.reduce((s, l) => s + l.totalMonthlyCost, 0);
   const flagged = licenses.filter(l => l.reviewFlag);
-  const soon = licenses.filter(l => {
+  const soon    = licenses.filter(l => {
     if (!l.renewalDate) return false;
     const days = (new Date(l.renewalDate).getTime() - Date.now()) / 86400000;
     return days >= 0 && days <= 30;
   });
 
   const s: Record<string, any> = {
-    body: { margin: 0, fontFamily: 'Inter, sans-serif', background: '#0d0d14', color: '#e8e8f0', minHeight: '100vh' },
-    nav: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 40px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
-    logo: { fontSize: '1.1rem', fontWeight: 700, background: 'linear-gradient(90deg,#7c6fff,#a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
-    main: { padding: '32px 40px', maxWidth: 1200, margin: '0 auto' },
-    statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 28 },
-    statCard: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '20px 24px' },
-    statLabel: { fontSize: '0.72rem', color: '#666688', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 },
-    statValue: { fontSize: '1.8rem', fontWeight: 700 },
-    table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.84rem' },
-    th: { textAlign: 'left' as const, padding: '10px 14px', color: '#555577', fontSize: '0.72rem', textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.07)' },
-    td: { padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)', color: '#ccccdd' },
-    btn: { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#aaa', padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: 4 },
+    body:       { margin: 0, fontFamily: 'Inter, sans-serif', background: '#0d0d14', color: '#e8e8f0', minHeight: '100vh' },
+    nav:        { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 40px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
+    logo:       { fontSize: '1.1rem', fontWeight: 700, background: 'linear-gradient(90deg,#7c6fff,#a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
+    main:       { padding: '32px 40px', maxWidth: 1200, margin: '0 auto' },
+    statsGrid:  { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 28 },
+    statCard:   { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '20px 24px' },
+    statLabel:  { fontSize: '0.72rem', color: '#666688', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 },
+    statValue:  { fontSize: '1.8rem', fontWeight: 700 },
+    table:      { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.84rem' },
+    th:         { textAlign: 'left' as const, padding: '10px 14px', color: '#555577', fontSize: '0.72rem', textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.07)' },
+    td:         { padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)', color: '#ccccdd' },
+    btn:        { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#aaa', padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: 4 },
   };
 
   const formattedSync = lastSynced
@@ -197,15 +170,29 @@ export default function DashboardPage() {
               disabled={syncing}
               style={{ ...s.btn, color: syncing ? '#555' : '#a78bfa', borderColor: 'rgba(124,111,255,0.3)' }}
             >
-              {syncing ? <Spinner /> : '↻'} Update Now
+              {syncing ? <Spinner /> : '↻'} Sync Now
             </button>
-            <button
-              onClick={() => { setShowSettings(true); loadQBStatus(); }}
-              style={{ ...s.btn }}
-            >
-              ⚙ QuickBooks Settings
-            </button>
+            {/* Show QB connect button only when auth is needed */}
+            {qbStatus?.needsAuth && (
+              <button
+                onClick={() => { window.location.href = '/api/quickbooks/authorize'; }}
+                style={{ ...s.btn, color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)' }}
+              >
+                ⚡ Connect QuickBooks
+              </button>
+            )}
+            {/* Status indicator — small, unobtrusive */}
+            {qbStatus && (
+              <span
+                onClick={() => setShowQBStatus(v => !v)}
+                style={{ fontSize: '0.72rem', color: qbStatus.configured ? '#4ade80' : '#fbbf24', cursor: 'pointer', opacity: 0.7 }}
+                title="QuickBooks status"
+              >
+                {qbStatus.configured ? '● QB' : '○ QB'}
+              </span>
+            )}
           </div>
+
           {warning && (
             <div style={{ marginTop: 10, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: 8, padding: '8px 14px', fontSize: '0.82rem', color: '#fbbf24' }}>
               ⚠ {warning}
@@ -219,19 +206,33 @@ export default function DashboardPage() {
             marginBottom: 20,
             background: qbBanner.type === 'success' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
             border: `1px solid ${qbBanner.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
-            borderRadius: 8,
-            padding: '10px 16px',
-            fontSize: '0.83rem',
+            borderRadius: 8, padding: '10px 16px', fontSize: '0.83rem',
             color: qbBanner.type === 'success' ? '#4ade80' : '#f87171',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
             <span>{qbBanner.message}</span>
-            <button
-              onClick={() => setQbBanner(null)}
-              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', opacity: 0.6, fontSize: '1rem', padding: '0 4px' }}
-            >✕</button>
+            <button onClick={() => setQbBanner(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', opacity: 0.6, fontSize: '1rem', padding: '0 4px' }}>✕</button>
+          </div>
+        )}
+
+        {/* QB status details (toggled by clicking the ● QB indicator) */}
+        {showQBStatus && qbStatus && (
+          <div style={{ marginBottom: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '12px 16px', fontSize: '0.8rem', color: '#666688' }}>
+            <div style={{ marginBottom: 4 }}>
+              <strong style={{ color: '#aaa' }}>QuickBooks</strong>
+              <span style={{ marginLeft: 8, color: qbStatus.configured ? '#4ade80' : '#fbbf24' }}>
+                {qbStatus.configured ? '● Connected' : qbStatus.missingAppCredentials ? '○ App credentials not configured' : '○ Needs authorization'}
+              </span>
+            </div>
+            {qbStatus.lastSynced && <div>Last synced: {new Date(qbStatus.lastSynced).toLocaleString()}</div>}
+            {qbStatus.needsAuth && (
+              <button
+                onClick={() => { window.location.href = '/api/quickbooks/authorize'; }}
+                style={{ marginTop: 8, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', padding: '4px 12px', borderRadius: 6, cursor: 'pointer', fontSize: '0.78rem' }}
+              >
+                Authorize QuickBooks →
+              </button>
+            )}
           </div>
         )}
 
@@ -239,7 +240,9 @@ export default function DashboardPage() {
         <div style={s.statsGrid}>
           <div style={{ ...s.statCard, borderColor: 'rgba(124,111,255,0.3)', background: 'rgba(124,111,255,0.08)' }}>
             <div style={s.statLabel}>Annual Spend</div>
-            <div style={{ ...s.statValue, background: 'linear-gradient(135deg,#7c6fff,#c4b5fd)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>${totalAnnual.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+            <div style={{ ...s.statValue, background: 'linear-gradient(135deg,#7c6fff,#c4b5fd)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              ${totalAnnual.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+            </div>
           </div>
           <div style={s.statCard}>
             <div style={s.statLabel}>Monthly Spend</div>
@@ -296,7 +299,7 @@ export default function DashboardPage() {
                   <span style={{
                     background: l.status === 'active' ? 'rgba(34,197,94,0.15)' : 'rgba(251,191,36,0.15)',
                     color: l.status === 'active' ? '#4ade80' : '#fbbf24',
-                    padding: '2px 10px', borderRadius: 100, fontSize: '0.72rem', fontWeight: 600
+                    padding: '2px 10px', borderRadius: 100, fontSize: '0.72rem', fontWeight: 600,
                   }}>
                     {l.reviewFlag ? 'Review' : l.status}
                   </span>
@@ -306,72 +309,6 @@ export default function DashboardPage() {
           </tbody>
         </table>
       </div>
-
-      {/* QuickBooks Settings Modal */}
-      {showSettings && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowSettings(false); }}
-        >
-          <div style={{ background: '#14141f', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, padding: 32, width: 480, maxWidth: '90vw' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <div style={{ fontWeight: 700, fontSize: '1rem' }}>⚙ QuickBooks Settings</div>
-              <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: '#666688', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
-            </div>
-
-            {/* Connection status */}
-            <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: '0.83rem' }}>
-              <div style={{ color: '#666688', marginBottom: 8, fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Connection Status</div>
-              <div style={{ color: '#ccccdd', marginBottom: 4 }}>
-                Realm ID: <span style={{ color: qbStatus?.realmId ? '#a78bfa' : '#555577' }}>{qbStatus?.realmId || 'Not configured'}</span>
-              </div>
-              <div style={{ color: '#ccccdd', marginBottom: 4 }}>
-                Last synced: <span style={{ color: '#aaa' }}>{qbStatus?.lastSynced ? new Date(qbStatus.lastSynced).toLocaleString() : 'Never'}</span>
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <span style={{
-                  background: qbStatus?.configured ? 'rgba(34,197,94,0.15)' : 'rgba(251,191,36,0.15)',
-                  color: qbStatus?.configured ? '#4ade80' : '#fbbf24',
-                  padding: '2px 10px', borderRadius: 100, fontSize: '0.72rem', fontWeight: 600,
-                }}>
-                  {qbStatus?.configured ? '● Connected' : '○ Not configured'}
-                </span>
-              </div>
-            </div>
-
-            {/* Form */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
-              {(['clientId', 'clientSecret', 'tenantId'] as const).map((field) => (
-                <div key={field}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#666688', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                    {field === 'clientId' ? 'Client ID' : field === 'clientSecret' ? 'Client Secret' : 'Tenant (Realm) ID'}
-                  </label>
-                  <input
-                    type={field === 'clientSecret' ? 'password' : 'text'}
-                    value={settingsForm[field]}
-                    onChange={e => setSettingsForm(f => ({ ...f, [field]: e.target.value }))}
-                    placeholder={`Enter ${field === 'tenantId' ? 'Realm/Tenant ID' : field}`}
-                    style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 12px', color: '#e8e8f0', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {settingsMsg && (
-              <div style={{ marginBottom: 16, fontSize: '0.82rem', color: '#a78bfa' }}>{settingsMsg}</div>
-            )}
-
-            <button
-              onClick={handleSaveSettings}
-              disabled={settingsSaving}
-              style={{ width: '100%', background: 'linear-gradient(135deg,#7c6fff,#a78bfa)', border: 'none', color: '#fff', padding: '10px 0', borderRadius: 8, cursor: settingsSaving ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-            >
-              {settingsSaving && <Spinner />}
-              Reconnect QuickBooks
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

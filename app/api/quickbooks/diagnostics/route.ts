@@ -1,27 +1,23 @@
 import { getServerSession } from 'next-auth';
 import { NextResponse } from 'next/server';
-import { getCredentials, refreshAccessToken as qbRefresh } from '@/lib/qb-token-store';
+import { getCredentials, getCredentialStatus, refreshAccessToken as qbRefresh } from '@/lib/qb-token-store';
 
 export async function GET() {
   const session = await getServerSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const creds = getCredentials();
+  const creds  = getCredentials();
+  const status = getCredentialStatus();
 
   const diagnostics: Record<string, unknown> = {
-    envVars: {
-      hasClientId: !!process.env.QB_CLIENT_ID,
-      hasClientSecret: !!process.env.QB_CLIENT_SECRET,
-      hasRealmId: !!process.env.QB_REALM_ID,
-      hasRefreshToken: !!process.env.QB_REFRESH_TOKEN,
-      realmIdValue: creds?.realmId ?? null,
+    credentials: {
+      hasClientId:     status.clientId,
+      hasClientSecret: status.clientSecret,
+      hasRealmId:      status.realmId,
+      hasRefreshToken: status.refreshToken,
+      realmIdValue:    creds?.realmId ?? null,
     },
-    railwayWriteBack: {
-      hasApiToken: !!process.env.RAILWAY_API_TOKEN,
-      hasServiceId: !!process.env.RAILWAY_SERVICE_ID,
-      hasEnvironmentId: !!(process.env.RAILWAY_ENVIRONMENT_ID || process.env.RAILWAY_ENVIRONMENT_NAME),
-    },
-    tokenTest: null,
+    tokenTest:   null,
     companyInfo: null,
   };
 
