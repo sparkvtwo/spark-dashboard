@@ -91,9 +91,8 @@ export async function GET(req: NextRequest) {
 
     console.log('[QB OAuth] Successfully connected. Realm:', realmId);
 
-    // Redirect to success page that displays the tokens for manual backup
-    const params = new URLSearchParams({ realmId, refreshToken });
-    return NextResponse.redirect(new URL(`/qb-success?${params.toString()}`, baseUrl));
+    // Redirect to dashboard with success flag — tokens are already persisted automatically
+    return NextResponse.redirect(new URL('/dashboard?qb_success=true', baseUrl));
 
   } catch (e) {
     console.error('[QB OAuth] Exception during token exchange:', e);

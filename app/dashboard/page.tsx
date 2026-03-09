@@ -52,6 +52,7 @@ export default function DashboardPage() {
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
+  const [qbBanner, setQbBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const [showSettings, setShowSettings] = useState(false);
   const [qbStatus, setQBStatus] = useState<QBStatus | null>(null);
@@ -62,6 +63,21 @@ export default function DashboardPage() {
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
+
+  // Handle QB OAuth callback result via query params (read from window to avoid Suspense requirement)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('qb_success');
+    const error = params.get('qb_error');
+    if (success) {
+      setQbBanner({ type: 'success', message: '✓ QuickBooks connected successfully. Tokens saved automatically.' });
+      window.history.replaceState({}, '', '/dashboard');
+      setTimeout(() => setQbBanner(null), 6000);
+    } else if (error) {
+      setQbBanner({ type: 'error', message: `QuickBooks connection failed: ${error.replace(/_/g, ' ')}` });
+      window.history.replaceState({}, '', '/dashboard');
+    }
+  }, []);
 
   const fetchData = useCallback(async (force = false) => {
     const url = force ? '/api/quickbooks/sync?force=1' : '/api/quickbooks/sync';
@@ -196,6 +212,28 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* QB connection banner */}
+        {qbBanner && (
+          <div style={{
+            marginBottom: 20,
+            background: qbBanner.type === 'success' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+            border: `1px solid ${qbBanner.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+            borderRadius: 8,
+            padding: '10px 16px',
+            fontSize: '0.83rem',
+            color: qbBanner.type === 'success' ? '#4ade80' : '#f87171',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <span>{qbBanner.message}</span>
+            <button
+              onClick={() => setQbBanner(null)}
+              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', opacity: 0.6, fontSize: '1rem', padding: '0 4px' }}
+            >✕</button>
+          </div>
+        )}
 
         {/* Stats */}
         <div style={s.statsGrid}>

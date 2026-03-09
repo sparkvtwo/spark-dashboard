@@ -13,15 +13,14 @@ export async function GET() {
     return NextResponse.json({ error: 'No QuickBooks credentials found' }, { status: 404 });
   }
 
-  // Mask the refresh token for display (show first/last 10 chars only)
+  // Mask the refresh token — never expose the full value via API
   const rt = creds.refreshToken || '';
   const maskedToken = rt.length > 20
     ? `${rt.substring(0, 10)}...${rt.substring(rt.length - 10)}`
-    : rt;
+    : '(short token)';
 
   return NextResponse.json({
     realmId: creds.realmId || null,
-    refreshToken: rt, // Full token — used for manual Railway backup if needed
     refreshTokenMasked: maskedToken,
     clientId: creds.clientId || null,
     hasClientSecret: !!creds.clientSecret,
