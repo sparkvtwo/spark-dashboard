@@ -80,18 +80,30 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard?qb_error=no_refresh_token', req.url));
     }
 
-    // Save tokens to settings file
-    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-    settings.realmId = realmId;
-    settings.refreshToken = refreshToken;
-    settings.accessToken = accessToken;
-    settings.tokenUpdatedAt = new Date().toISOString();
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    // Save tokens to settings file (local dev only - Railway is ephemeral)
+    try {
+      const settings = fs.existsSync(SETTINGS_FILE) 
+        ? JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'))
+        : {};
+      settings.realmId = realmId;
+      settings.refreshToken = refreshToken;
+      settings.accessToken = accessToken;
+      settings.tokenUpdatedAt = new Date().toISOString();
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    } catch (e) {
+      console.error('[QB OAuth] Failed to save settings file:', e);
+    }
 
     console.log('[QB OAuth] Successfully connected. Realm:', realmId);
+    console.log('[QB OAuth] REFRESH_TOKEN (add to Railway env):', refreshToken);
     
-    // Redirect back to dashboard with success
-    return NextResponse.redirect(new URL('/dashboard?qb_connected=true', req.url));
+    // Redirect back to dashboard with tokens in URL for easy copy/paste
+    const params = new URLSearchParams({
+      qb_connected: 'true',
+      realmId: realmId,
+      refreshToken: refreshToken,
+    });
+    return NextResponse.redirect(new URL(`/dashboard?${params.toString()}`, req.url));
     
   } catch (e) {
     console.error('[QB OAuth] Exception during token exchange:', e);
