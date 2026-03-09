@@ -1,4 +1,3 @@
-import { getServerSession } from 'next-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -7,12 +6,12 @@ import { saveAllTokens } from '@/lib/qb-token-store';
 const SETTINGS_FILE = path.join(process.cwd(), 'data', 'qb-settings.json');
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession();
   const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
 
-  if (!session) {
-    return NextResponse.redirect(new URL('/login', baseUrl));
-  }
+  // Note: we intentionally do not require a session here.
+  // The callback is secured by the one-time OAuth code + state param from QB.
+  // Requiring a session causes the OAuth code to be silently dropped if the
+  // session cookie is missing (e.g. after a redeploy mid-flow).
 
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');

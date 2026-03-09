@@ -122,8 +122,8 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       if (data.authUrl) {
-        setSettingsMsg('Settings saved! Redirecting to QuickBooks OAuth...');
-        setTimeout(() => window.open(data.authUrl, '_blank'), 1500);
+        setSettingsMsg('Settings saved! Redirecting to QuickBooks…');
+        setTimeout(() => { window.location.href = data.authUrl; }, 1000);
       } else {
         setSettingsMsg(data.error || 'Saved.');
       }
