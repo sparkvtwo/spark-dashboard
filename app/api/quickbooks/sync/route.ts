@@ -2,12 +2,12 @@ import { getServerSession } from 'next-auth';
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { getCredentials, refreshAccessToken as qbRefresh } from '@/lib/qb-token-store';
 
 const CACHE_FILE = path.join(process.cwd(), 'data', 'licenses-cache.json');
-const SETTINGS_FILE = path.join(process.cwd(), 'data', 'qb-settings.json');
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-// ─── Vendor categorization (ported from qb_client.py / licenses importer) ───
+// ─── Vendor categorization ────────────────────────────────────────────────────
 
 const VENDOR_MAP: Record<string, { name: string; category: string }> = {
   'intuit':           { name: 'QuickBooks',       category: 'Finance' },
@@ -116,32 +116,14 @@ function vendorsToLicenses(vendors: QBVendor[]): LicenseEntry[] {
   });
 }
 
-// ─── Token refresh ───────────────────────────────────────────────────────────
+// ─── QB query ─────────────────────────────────────────────────────────────────
 
-async function refreshAccessToken(clientId: string, clientSecret: string, refreshToken: string): Promise<{ access_token: string; refresh_token?: string }> {
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken });
-
-  const res = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    },
-    body: body.toString(),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Token refresh failed: ${res.status} ${text}`);
-  }
-  return res.json();
-}
-
-// ─── QB query ────────────────────────────────────────────────────────────────
-
-async function qbQuery(sql: string, accessToken: string, realmId: string, retryWithRefresh?: () => Promise<string>): Promise<{ data: unknown; intuitTid: string }> {
+async function qbQuery(
+  sql: string,
+  accessToken: string,
+  realmId: string,
+  retryWithRefresh?: () => Promise<string>
+): Promise<{ data: unknown; intuitTid: string }> {
   const base = process.env.QB_ENVIRONMENT === 'production'
     ? 'https://quickbooks.api.intuit.com'
     : 'https://sandbox-quickbooks.api.intuit.com';
@@ -156,7 +138,7 @@ async function qbQuery(sql: string, accessToken: string, realmId: string, retryW
   console.log(`[QB] intuit_tid=${intuitTid} status=${res.status}`);
 
   if (res.status === 401 && retryWithRefresh) {
-    console.log('[QB] Token expired, refreshing...');
+    console.log('[QB] Access token expired, refreshing...');
     const newToken = await retryWithRefresh();
     return qbQuery(sql, newToken, realmId); // no retryWithRefresh on second attempt
   }
@@ -170,7 +152,7 @@ async function qbQuery(sql: string, accessToken: string, realmId: string, retryW
   return { data, intuitTid };
 }
 
-// ─── Route handlers ──────────────────────────────────────────────────────────
+// ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function GET() {
   const session = await getServerSession();
@@ -187,49 +169,36 @@ export async function GET() {
     }
   } catch { /* ignore cache errors */ }
 
-  // Resolve credentials: env vars take precedence, then settings file
-  let clientId = process.env.QB_CLIENT_ID || '';
-  let clientSecret = process.env.QB_CLIENT_SECRET || '';
-  let realmId = process.env.QB_REALM_ID || '';
-  let refreshToken = process.env.QB_REFRESH_TOKEN || '';
-  let accessToken = process.env.QB_ACCESS_TOKEN || '';
-
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      const s = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-      if (!clientId) clientId = s.clientId || '';
-      if (!clientSecret) clientSecret = s.clientSecret || '';
-      if (!realmId) realmId = s.realmId || s.tenantId || '';
-      if (!refreshToken) refreshToken = s.refreshToken || '';
-      if (!accessToken) accessToken = s.accessToken || '';
-    }
-  } catch { /* ignore */ }
-
-  if (!clientId || !clientSecret || !realmId || !refreshToken) {
-    // Fall back to cache (stale) or seed data
+  // Load credentials from centralised token store
+  const creds = getCredentials();
+  if (!creds) {
     return serveCachedOrSeed('QuickBooks credentials not configured.');
   }
 
-  // Token refresh helper
+  let accessToken = creds.accessToken || '';
+
+  // Token refresh helper — also handles rotation persistence via token store
   const doRefresh = async (): Promise<string> => {
-    const tokens = await refreshAccessToken(clientId, clientSecret, refreshToken);
-    accessToken = tokens.access_token;
-    if (tokens.refresh_token) refreshToken = tokens.refresh_token;
+    const result = await qbRefresh(creds);
+    accessToken = result.accessToken;
+    // Update creds.refreshToken in-place for any subsequent retries
+    creds.refreshToken = result.refreshToken;
     return accessToken;
   };
 
   // Ensure we have an access token
   if (!accessToken) {
-    try { accessToken = await doRefresh(); } catch (e) {
+    try {
+      accessToken = await doRefresh();
+    } catch (e) {
+      console.error('[QB Sync] Token refresh failed:', e);
       return serveCachedOrSeed(`Token refresh failed: ${e}`);
     }
   }
 
   try {
-    // Try Vendor query first (more broadly accessible than Purchase)
     const sql = `SELECT * FROM Vendor MAXRESULTS 1000`;
-
-    const { data } = await qbQuery(sql, accessToken, realmId, doRefresh);
+    const { data } = await qbQuery(sql, accessToken, creds.realmId, doRefresh);
     const vendors: QBVendor[] = (data as any)?.QueryResponse?.Vendor || [];
     console.log(`[QB] Fetched ${vendors.length} vendors`);
 
@@ -258,7 +227,6 @@ function serveCachedOrSeed(warning: string) {
       return NextResponse.json({ ...cached, warning, fromCache: true });
     }
   } catch { /* ignore */ }
-  // Absolute fallback: empty
   return NextResponse.json({
     licenses: [],
     lastSynced: null,

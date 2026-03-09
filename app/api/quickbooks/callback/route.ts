@@ -2,20 +2,20 @@ import { getServerSession } from 'next-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
+import { saveAllTokens } from '@/lib/qb-token-store';
 
 const SETTINGS_FILE = path.join(process.cwd(), 'data', 'qb-settings.json');
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession();
   const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-  
+
   if (!session) {
     return NextResponse.redirect(new URL('/login', baseUrl));
   }
 
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
-  const state = searchParams.get('state');
   const realmId = searchParams.get('realmId');
   const error = searchParams.get('error');
 
@@ -42,13 +42,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard?qb_error=settings_load_failed', baseUrl));
   }
 
+  // Fall back to env vars
+  if (!clientId) clientId = process.env.QB_CLIENT_ID || '';
+  if (!clientSecret) clientSecret = process.env.QB_CLIENT_SECRET || '';
+
   if (!clientId || !clientSecret) {
     return NextResponse.redirect(new URL('/dashboard?qb_error=no_credentials', baseUrl));
   }
 
   // Exchange code for tokens
   const redirectUri = process.env.QB_REDIRECT_URI || `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/quickbooks/callback`;
-  
+
   try {
     const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
     const body = new URLSearchParams({
@@ -82,30 +86,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard?qb_error=no_refresh_token', baseUrl));
     }
 
-    // Save tokens to settings file (local dev only - Railway is ephemeral)
-    try {
-      const settings = fs.existsSync(SETTINGS_FILE) 
-        ? JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'))
-        : {};
-      settings.realmId = realmId;
-      settings.refreshToken = refreshToken;
-      settings.accessToken = accessToken;
-      settings.tokenUpdatedAt = new Date().toISOString();
-      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-    } catch (e) {
-      console.error('[QB OAuth] Failed to save settings file:', e);
-    }
+    // Persist tokens via centralised token store (writes to Railway vars + local file)
+    await saveAllTokens({ clientId, clientSecret, realmId, refreshToken, accessToken });
 
     console.log('[QB OAuth] Successfully connected. Realm:', realmId);
-    console.log('[QB OAuth] REFRESH_TOKEN (add to Railway env):', refreshToken);
 
-    // Redirect to a success page that displays the token
-    const params = new URLSearchParams({
-      realmId: realmId,
-      refreshToken: refreshToken,
-    });
+    // Redirect to success page that displays the tokens for manual backup
+    const params = new URLSearchParams({ realmId, refreshToken });
     return NextResponse.redirect(new URL(`/qb-success?${params.toString()}`, baseUrl));
-    
+
   } catch (e) {
     console.error('[QB OAuth] Exception during token exchange:', e);
     return NextResponse.redirect(new URL('/dashboard?qb_error=exception', baseUrl));

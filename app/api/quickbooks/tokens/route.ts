@@ -1,9 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { NextResponse } from 'next/server';
-import * as fs from 'fs';
-import * as path from 'path';
-
-const SETTINGS_FILE = path.join(process.cwd(), 'data', 'qb-settings.json');
+import { getCredentials } from '@/lib/qb-token-store';
 
 export async function GET() {
   const session = await getServerSession();
@@ -11,29 +8,23 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  try {
-    if (!fs.existsSync(SETTINGS_FILE)) {
-      return NextResponse.json({ error: 'No QuickBooks settings found' }, { status: 404 });
-    }
-
-    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-    
-    // Mask the refresh token for security (show first/last 10 chars only)
-    const rt = settings.refreshToken || '';
-    const maskedToken = rt.length > 20 
-      ? `${rt.substring(0, 10)}...${rt.substring(rt.length - 10)}` 
-      : rt;
-
-    return NextResponse.json({
-      realmId: settings.realmId || null,
-      refreshToken: rt, // Full token - you need this
-      refreshTokenMasked: maskedToken,
-      clientId: settings.clientId || null,
-      hasClientSecret: !!settings.clientSecret,
-      tokenUpdatedAt: settings.tokenUpdatedAt || null,
-    });
-  } catch (e) {
-    console.error('[QB Tokens API] Error reading settings:', e);
-    return NextResponse.json({ error: 'Failed to read settings' }, { status: 500 });
+  const creds = getCredentials();
+  if (!creds) {
+    return NextResponse.json({ error: 'No QuickBooks credentials found' }, { status: 404 });
   }
+
+  // Mask the refresh token for display (show first/last 10 chars only)
+  const rt = creds.refreshToken || '';
+  const maskedToken = rt.length > 20
+    ? `${rt.substring(0, 10)}...${rt.substring(rt.length - 10)}`
+    : rt;
+
+  return NextResponse.json({
+    realmId: creds.realmId || null,
+    refreshToken: rt, // Full token — used for manual Railway backup if needed
+    refreshTokenMasked: maskedToken,
+    clientId: creds.clientId || null,
+    hasClientSecret: !!creds.clientSecret,
+    source: process.env.QB_REFRESH_TOKEN ? 'env' : 'settings_file',
+  });
 }
